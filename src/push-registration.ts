@@ -12,6 +12,50 @@ const urlBase64ToUint8Array = (base64Url: string): Uint8Array<ArrayBuffer> => {
 const isPushSupported = (): boolean =>
 	"serviceWorker" in navigator && "PushManager" in window;
 
+// NOTE: navigator.serviceWorker.register() resolves while the worker is still 'installing', but
+//   pushManager.subscribe() rejects with InvalidStateError unless registration.active is set. When permission is
+//   already granted, requestPermission() resolves instantly and leaves no time for activation, so the first
+//   subscribe attempt fails. navigator.serviceWorker.ready cannot be used here because it waits for the
+//   registration that controls *this page*, and a worker scoped outside the page's path never controls it
+const waitForActivation = (
+	registration: ServiceWorkerRegistration,
+): Promise<void> =>
+	new Promise((resolve, reject) => {
+		// NOTE: An update in progress fills both active and installing, and subscribe() only needs active, so a
+		//   registration that already has one is ready even while a newer worker is still installing. No worker in
+		//   any slot should not happen right after register(); rather than inventing an error, fall through and let
+		//   subscribe() report whatever the real problem is
+		const worker = registration.installing ?? registration.waiting;
+		if (registration.active || !worker) {
+			resolve();
+			return;
+		}
+
+		const controller = new AbortController();
+		worker.addEventListener(
+			"statechange",
+			() => {
+				// NOTE: Check registration.active rather than worker.state, because that is the condition subscribe()
+				//   actually requires. The spec's Activate algorithm sets the registration's active worker before it
+				//   moves the worker to 'activating', so active is already populated by the time this fires, and
+				//   waiting for 'activated' instead would additionally block on any waitUntil() in the consumer's
+				//   activate handler
+				if (registration.active) {
+					// NOTE: statechange fires for every transition (installed -> activating -> activated), so
+					//   { once: true } would unsubscribe at the first hop. Abort the signal explicitly instead
+					controller.abort();
+					resolve();
+				} else if (worker.state === "redundant") {
+					controller.abort();
+					reject(
+						new Error("Service worker became redundant before activation"),
+					);
+				}
+			},
+			{ signal: controller.signal },
+		);
+	});
+
 const DEFAULT_SERVICE_WORKER_URL = "/service-worker.js";
 
 export type PushRegistrationErrorReason =
@@ -113,6 +157,8 @@ export class PushRegistration extends HTMLElement {
 				this.dispatchError("permission-denied");
 				return;
 			}
+
+			await waitForActivation(registration);
 
 			subscription = await registration.pushManager.subscribe({
 				userVisibleOnly: true,

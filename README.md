@@ -49,7 +49,7 @@ type PushRegistrationErrorDetail = { reason: PushRegistrationErrorReason; error?
 
 - `unsupported` — the browser does not support Service Worker or the Push API.
 - `permission-denied` — the user denied (or dismissed) the notification permission prompt.
-- `subscribe-failed` — Service Worker registration or `pushManager.subscribe()` failed; the original error is available as `error`.
+- `subscribe-failed` — Service Worker registration or activation, or `pushManager.subscribe()`, failed; the original error is available as `error`.
 
 The element only notifies the reason code; presenting user-facing copy for each reason is the responsibility of the host application.
 
@@ -58,6 +58,7 @@ The element only notifies the reason code; presenting user-facing copy for each 
 - On unsupported browsers, the element disables the parent form's `button[type="submit"]` on the next animation frame after `connectedCallback` runs (the button is not guaranteed to exist in the DOM yet at `connectedCallback` time).
 - On success, the element calls `form.submit()` directly, which bypasses the form's `submit` event handlers and constraint validation. Frameworks like Turbo or Rails UJS do not intercept this call, so the result is a full page navigation.
 - The element registers the Service Worker with `updateViaCache: 'none'`, so the script itself ignores the browser's HTTP cache.
+- Before calling `pushManager.subscribe()`, the element waits for the Service Worker to become active, since `register()` can resolve while the worker is still `installing` and `subscribe()` requires `registration.active` to be set.
 
 ## TypeScript
 
