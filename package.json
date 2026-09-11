@@ -1,6 +1,6 @@
 {
 	"name": "@aki77/push-registration-element",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "Web Push subscription custom element.",
 	"main": "dist/index.js",
 	"module": "dist/index.js",
